@@ -3,6 +3,7 @@ import numpy as np
 from nets.gacn_net import GACN_Fuse
 from nets.nets_utility import image_as_uint8
 from PIL import Image
+import time
 def image_fusion(input_dir:  str, output_dir: str):
     """
     Double images fusion
@@ -19,7 +20,12 @@ def image_fusion(input_dir:  str, output_dir: str):
             print("Fusing {}".format(image_name))
             img1 = np.array(Image.open(os.path.join(input_dir, image_name + "_1.png")))
             img2 = np.array(Image.open(os.path.join(input_dir, image_name + "_2.png")))
-            fused = gacn.fuse(img1, img2)
+            srt = time.time()
+            if(image_name == "color_lytro_06"):
+                fused = gacn.fuse(img1, img2)
+            continue
+            end = time.time() - srt
+            print(end)
             fused = image_as_uint8(fused)
             fused = Image.fromarray(fused)
             fused.save(os.path.join(output_dir, image_name + ".png"), format='PNG', compress_level=0)

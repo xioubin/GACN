@@ -10,7 +10,6 @@ from nets.nets_utility import GaussBlur
 from nets.guided_filter import GuidedFilter
 import cv2
 
-
 class GACN_Fuse():
     """
     Fusion Class
@@ -43,6 +42,20 @@ class GACN_Fuse():
             # transforms.Normalize([self.mean_value], [self.std_value])
         ])
 
+    def export(self):
+        x = (torch.zeros(1,1,520,520), torch.zeros(1,1,520,520))
+        
+        dynamic_axes = {'input_image1': {0:'batch', 1:'channel', 2:'height', 3:'width'}, 
+        'input_image2': {0:'batch', 1:'channel', 2:'height', 3:'width'},
+        'output_ori':{0:'batch', 1:'channel', 2:'height', 3:'width'},
+        'output_bgr':{0:'batch', 1:'channel', 2:'height', 3:'width'}
+        }
+        input_name = ['input_image1', 'input_image2']
+        output_name = ['output_ori', 'output_bgr']
+        torch.onnx.export(self.model, x, 'GACN_520x520.onnx', True, True, input_names=input_name, output_names = output_name, dynamic_axes=None)
+        print('Model exported to ONNX as GACN.onnx')
+        return
+
     def fuse(self, img1, img2):
         """
         Double images fusion
@@ -60,6 +73,10 @@ class GACN_Fuse():
         img2_gray_pil = PIL.Image.fromarray(img2_gray)
         img1_tensor = self.data_transforms(img1_gray_pil).unsqueeze(0).to(self.device)               
         img2_tensor = self.data_transforms(img2_gray_pil).unsqueeze(0).to(self.device)
+        torch.set_printoptions(edgeitems=10, linewidth=200)
+        print(img1)
+        print(img2)
+        
         mask, mask_BGF = self.model.forward(img1_tensor, img2_tensor)
         img1_t = self.data_transforms(img1).unsqueeze(0).to(self.device)
         img2_t = self.data_transforms(img2).unsqueeze(0).to(self.device)
@@ -225,7 +242,7 @@ class GACN_Fuse():
         kernel_padding = kernel_size // 2
         f1_sf = f.conv2d(f1_grad, add_kernel, padding=kernel_padding, groups=c)
         return f1_sf
-
+    
 
 class GACNFuseNet(nn.Module):
     """
@@ -320,15 +337,18 @@ class GACNFuseNet(nn.Module):
         :param img2: torch.Tensor
         :return: output, torch.Tensor
         """
+        img1 = img1.to('cuda')
+        img2 = img2.to('cuda')
+
         # Feature extraction c1
         feature_extraction_conv0_c1 = self.feature_extraction_conv0(img1)
         se_feature_extraction_conv0_c1 = self.se_0(feature_extraction_conv0_c1)
         feature_extraction_conv1_c1 = self.feature_extraction_conv1(se_feature_extraction_conv0_c1)
         se_feature_extraction_conv1_c1 = self.se_1(feature_extraction_conv1_c1)
-        se_cat1_c1 = self.concat(se_feature_extraction_conv0_c1, se_feature_extraction_conv1_c1)
+        se_cat1_c1 = torch.cat((se_feature_extraction_conv0_c1, se_feature_extraction_conv1_c1), dim=1)
         feature_extraction_conv2_c1 = self.feature_extraction_conv2(se_cat1_c1)
         se_feature_extraction_conv2_c1 = self.se_2(feature_extraction_conv2_c1)
-        se_cat2_c1 = self.concat(se_cat1_c1, se_feature_extraction_conv2_c1)
+        se_cat2_c1 = torch.cat((se_cat1_c1, se_feature_extraction_conv2_c1), dim=1)
         feature_extraction_conv3_c1 = self.feature_extraction_conv3(se_cat2_c1)
         se_feature_extraction_conv3_c1 = self.se_3(feature_extraction_conv3_c1)
         
@@ -337,18 +357,18 @@ class GACNFuseNet(nn.Module):
         se_feature_extraction_conv0_c2 = self.se_0(feature_extraction_conv0_c2)
         feature_extraction_conv1_c2 = self.feature_extraction_conv1(se_feature_extraction_conv0_c2)
         se_feature_extraction_conv1_c2 = self.se_1(feature_extraction_conv1_c2)
-        se_cat1_c2 = self.concat(se_feature_extraction_conv0_c2, se_feature_extraction_conv1_c2)
+        se_cat1_c2 = torch.cat((se_feature_extraction_conv0_c2, se_feature_extraction_conv1_c2), dim = 1)
         feature_extraction_conv2_c2 = self.feature_extraction_conv2(se_cat1_c2)
         se_feature_extraction_conv2_c2 = self.se_2(feature_extraction_conv2_c2)
-        se_cat2_c2 = self.concat(se_cat1_c2, se_feature_extraction_conv2_c2)
+        se_cat2_c2 = torch.cat((se_cat1_c2, se_feature_extraction_conv2_c2), dim = 1)
         feature_extraction_conv3_c2 = self.feature_extraction_conv3(se_cat2_c2)
         se_feature_extraction_conv3_c2 = self.se_3(feature_extraction_conv3_c2)
 
         # SF fusion
         cat_1 = torch.cat((se_feature_extraction_conv0_c1, se_feature_extraction_conv1_c1, 
-                           se_feature_extraction_conv2_c1, se_feature_extraction_conv3_c1), axis=1)
+                           se_feature_extraction_conv2_c1, se_feature_extraction_conv3_c1), dim=1)
         cat_2 = torch.cat((se_feature_extraction_conv0_c2, se_feature_extraction_conv1_c2, 
-                           se_feature_extraction_conv2_c2, se_feature_extraction_conv3_c2), axis=1)
+                           se_feature_extraction_conv2_c2, se_feature_extraction_conv3_c2), dim=1)
         fused_cat = self.fusion_channel_sf(cat_1, cat_2, kernel_radius=5)
         se_f = self.se_4(fused_cat)
 
@@ -375,6 +395,7 @@ class GACNFuseNet(nn.Module):
         temp_fused = img1 * output_origin + (1 - output_origin) * img2
         output_gf = self.guided_filter(temp_fused, output_origin)
         output_bgf = output_gf * boundary_map + output_origin * (1 - boundary_map)
+        # print(output_origin.shape, output_bgf.shape)
         return output_origin, output_bgf
 
 

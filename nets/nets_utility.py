@@ -173,7 +173,7 @@ class GaussBlur(nn.Module):
         self.weight = self.weight.expand(c, 1, 9, 9)
         if str(self.weight.device) != str(data.device):
             self.weight = self.weight.to(data.device)
-        blurred = F.conv2d(data, self.weight, padding=[self.radius], groups=c)
+        blurred = F.conv2d(data, self.weight, padding=self.radius, groups=c)
         return blurred
 
 
