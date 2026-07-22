@@ -1,5 +1,30 @@
-.idea/
+# Python bytecode and caches
 __pycache__/
-.ipynb_checkpoints
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local datasets and generated results
+data/
+outputs/
+results/
+nets/out/
+nets/train_record/
+*.onnx
+
+# Local experimental files
 qg_torch.py
-*.pyc
